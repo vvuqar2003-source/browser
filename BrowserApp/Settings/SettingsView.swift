@@ -197,7 +197,7 @@ struct SettingsView: View {
 
         let totalSize = files.reduce(0) { sum, file in
             let attrs = try? FileManager.default.attributesOfItem(atPath: file.path)
-            return sum + (attrs?[.size] as? Int64 ?? 0)
+            return sum + Int(attrs?[.size] as? Int64 ?? 0)
         }
 
         let mb = Double(totalSize) / (1024 * 1024)

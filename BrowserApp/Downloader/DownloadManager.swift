@@ -99,7 +99,7 @@ class DownloadManager: NSObject, ObservableObject {
             return
         }
 
-        let session = isBackgroundDownload ? backgroundSession : foregroundSession
+        let session: URLSession = isBackgroundDownload ? backgroundSession : foregroundSession
         let downloadTask = session.downloadTask(with: url)
 
         let task = DownloadTask(url: url, fileName: fileName, task: downloadTask, isHLS: false)
