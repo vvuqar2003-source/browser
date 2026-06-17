@@ -20,9 +20,6 @@ jobs:
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
 
-      - name: List project info
-        run: xcodebuild -project BrowserApp.xcodeproj -list
-
       - name: Build archive
         run: |
           xcodebuild clean archive \
@@ -38,33 +35,18 @@ jobs:
             DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER=""
 
-      - name: Create ExportOptions.plist
+      - name: Create IPA from archive
         run: |
-          cat > build/ExportOptions.plist << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>method</key>
-              <string>ad-hoc</string>
-              <key>compileBitcode</key>
-              <false/>
-              <key>stripSwiftSymbols</key>
-              <true/>
-          </dict>
-          </plist>
-          EOF
-
-      - name: Export IPA
-        run: |
-          xcodebuild -exportArchive \
-            -archivePath $PWD/build/BrowserApp.xcarchive \
-            -exportOptionsPlist build/ExportOptions.plist \
-            -exportPath $PWD/build/output
+          mkdir -p build/output
+          APP_PATH=$(find build/BrowserApp.xcarchive -name "BrowserApp.app" -type d)
+          mkdir -p build/output/Payload
+          cp -R "$APP_PATH" build/output/Payload/
+          cd build/output
+          zip -r ../BrowserApp.ipa Payload/
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
           name: BrowserApp-IPA
-          path: build/output/*.ipa
+          path: build/BrowserApp.ipa
           retention-days: 30
