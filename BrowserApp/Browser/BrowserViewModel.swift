@@ -10,6 +10,7 @@ struct DetectedVideo: Identifiable, Equatable {
     var fileName: String
     var format: String
     var estimatedSize: String?
+    var streamType: String // "hls", "direct"
 
     static func == (lhs: DetectedVideo, rhs: DetectedVideo) -> Bool {
         lhs.url == rhs.url
@@ -103,6 +104,39 @@ class BrowserViewModel: NSObject, ObservableObject {
         }
     }
 
+    func downloadVideo(_ video: DetectedVideo, with downloadManager: DownloadManager) {
+        guard let webView = webView else { return }
+
+        let isHLS = video.streamType == "hls"
+
+        if isHLS {
+            // HLS needs segment-by-segment download, use headers approach
+            getDownloadHeaders(for: video.url) { headers in
+                downloadManager.downloadHLS(url: video.url, fileName: video.fileName, headers: headers)
+            }
+            return
+        }
+
+        // Use WKWebView.startDownload — this uses the browser's full session (cookies, auth, everything)
+        let request = URLRequest(url: video.url)
+        webView.startDownload(using: request) { download in
+            DispatchQueue.main.async {
+                downloadManager.handleWKDownload(download, fileName: video.fileName, url: video.url)
+            }
+        }
+    }
+
+    func downloadSubtitle(_ subtitle: DetectedSubtitle, with downloadManager: DownloadManager) {
+        guard let webView = webView else { return }
+
+        let request = URLRequest(url: subtitle.url)
+        webView.startDownload(using: request) { download in
+            DispatchQueue.main.async {
+                downloadManager.handleWKDownload(download, fileName: subtitle.fileName, url: subtitle.url)
+            }
+        }
+    }
+
     private func getDownloadHeaders(for url: URL, completion: @escaping ([String: String]?) -> Void) {
         guard let webView = webView else {
             completion(nil)
@@ -139,36 +173,34 @@ class BrowserViewModel: NSObject, ObservableObject {
         }
     }
 
-    func downloadVideo(_ video: DetectedVideo, with downloadManager: DownloadManager) {
-        getDownloadHeaders(for: video.url) { headers in
-            downloadManager.download(url: video.url, fileName: video.fileName, headers: headers)
-        }
-    }
-
-    func downloadSubtitle(_ subtitle: DetectedSubtitle, with downloadManager: DownloadManager) {
-        getDownloadHeaders(for: subtitle.url) { headers in
-            downloadManager.download(url: subtitle.url, fileName: subtitle.fileName, headers: headers)
-        }
-    }
-
-    func addVideo(url: URL, pageTitle: String) {
+    func addVideo(url: URL, pageTitle: String, streamType: String? = nil) {
         let urlString = url.absoluteString
         guard !seenVideoURLs.contains(urlString) else { return }
         seenVideoURLs.insert(urlString)
 
         let ext = url.pathExtension.lowercased()
+        let isHLS = streamType == "hls" || ext == "m3u8"
         let format: String
-        switch ext {
-        case "mp4": format = "MP4"
-        case "m3u8": format = "HLS (M3U8)"
-        case "mkv": format = "MKV"
-        case "webm": format = "WebM"
-        case "ts": format = "MPEG-TS"
-        case "mov": format = "MOV"
-        default: format = ext.uppercased()
+        if isHLS {
+            format = "HLS (M3U8)"
+        } else {
+            switch ext {
+            case "mp4": format = "MP4"
+            case "mkv": format = "MKV"
+            case "webm": format = "WebM"
+            case "ts": format = "MPEG-TS"
+            case "mov": format = "MOV"
+            default: format = ext.isEmpty ? "Video" : ext.uppercased()
+            }
         }
 
-        let fileName = url.lastPathComponent.isEmpty ? "video_\(detectedVideos.count + 1).\(ext)" : url.lastPathComponent
+        let baseName: String
+        if url.lastPathComponent.isEmpty || url.lastPathComponent == "/" {
+            baseName = "video_\(detectedVideos.count + 1)"
+        } else {
+            baseName = url.lastPathComponent
+        }
+        let fileName = isHLS && !baseName.hasSuffix(".mp4") ? baseName + ".mp4" : baseName
 
         let video = DetectedVideo(
             url: url,
@@ -176,7 +208,8 @@ class BrowserViewModel: NSObject, ObservableObject {
             timestamp: Date(),
             fileName: fileName,
             format: format,
-            estimatedSize: nil
+            estimatedSize: nil,
+            streamType: isHLS ? "hls" : "direct"
         )
 
         DispatchQueue.main.async {
@@ -273,11 +306,12 @@ extension BrowserViewModel: WKScriptMessageHandler {
 
         let pageTitle = body["pageTitle"] ?? self.pageTitle
         let type = body["type"] ?? "video"
+        let streamType = body["streamType"] // "hls", "direct", etc.
 
         if type == "subtitle" {
             addSubtitle(url: url, pageTitle: pageTitle)
         } else {
-            addVideo(url: url, pageTitle: pageTitle)
+            addVideo(url: url, pageTitle: pageTitle, streamType: streamType)
         }
     }
 }
