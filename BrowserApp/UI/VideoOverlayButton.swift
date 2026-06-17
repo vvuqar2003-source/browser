@@ -1,11 +1,8 @@
-// BrowserApp/BrowserApp/UI/VideoOverlayButton.swift
-
 import SwiftUI
 
 struct VideoOverlayButton: View {
     let videoCount: Int
     let onTap: () -> Void
-    let onLongPress: () -> Void
 
     @State private var isAnimating = false
 
@@ -24,25 +21,15 @@ struct VideoOverlayButton: View {
                         .font(.title2)
                         .foregroundColor(.white)
 
-                    if videoCount > 1 {
+                    if videoCount > 0 {
                         Text("\(videoCount)")
                             .font(.caption2)
+                            .fontWeight(.bold)
                             .foregroundColor(.white)
                     }
                 }
             }
-            .scaleEffect(isAnimating ? 1.1 : 1.0)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                    isAnimating = true
-                }
-            }
+            .scaleEffect(isAnimating && videoCount == 0 ? 1.0 : 1.0)
         }
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.5)
-                .onEnded { _ in
-                    onLongPress()
-                }
-        )
     }
 }

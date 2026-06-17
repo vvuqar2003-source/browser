@@ -1,5 +1,3 @@
-// BrowserApp/BrowserApp/VideoDetector/inject.js
-
 (function() {
     'use strict';
 
@@ -95,7 +93,21 @@
             const match = bg.match(/url\(["']?(.*?)["']?\)/);
             if (match) checkURL(match[1], 'video');
         }
+
+        if (el.tagName === 'IFRAME') {
+            try {
+                const doc = el.contentDocument || el.contentWindow?.document;
+                if (doc) {
+                    doc.querySelectorAll('video, audio, source, track, a[href]').forEach(scanElement);
+                }
+            } catch(e) {}
+        }
     }
+
+    window.manualScan = function() {
+        document.querySelectorAll('video, audio, source, track, a[href], iframe').forEach(scanElement);
+        document.querySelectorAll('*').forEach(scanElement);
+    };
 
     const observer = new MutationObserver((mutations) => {
         for (const mutation of mutations) {

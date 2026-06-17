@@ -1,5 +1,3 @@
-// BrowserApp/BrowserApp/Browser/BrowserView.swift
-
 import SwiftUI
 import WebKit
 
@@ -28,23 +26,18 @@ struct BrowserView: View {
                 WebViewContainer(viewModel: viewModel, adBlocker: adBlocker)
                     .ignoresSafeArea(.container, edges: .bottom)
 
-                if viewModel.showVideoOverlay {
-                    VStack {
+                VStack {
+                    Spacer()
+                    HStack {
                         Spacer()
-                        HStack {
-                            Spacer()
-                            VideoOverlayButton(
-                                videoCount: viewModel.detectedVideos.count,
-                                onTap: {
-                                    viewModel.showDownloadSheet = true
-                                },
-                                onLongPress: {
-                                    viewModel.showDownloadSheet = true
-                                }
-                            )
-                            .padding(.trailing, 16)
-                            .padding(.bottom, 16)
-                        }
+                        VideoOverlayButton(
+                            videoCount: viewModel.detectedCount,
+                            onTap: {
+                                viewModel.scanAndShowDownloadSheet()
+                            }
+                        )
+                        .padding(.trailing, 16)
+                        .padding(.bottom, 16)
                     }
                 }
             }

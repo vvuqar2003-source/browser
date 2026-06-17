@@ -1,17 +1,28 @@
-// BrowserApp/BrowserApp/Downloader/DownloadManager.swift
-
 import Foundation
 import UIKit
 import UserNotifications
 
 class DownloadManager: NSObject, ObservableObject {
+    static let shared = DownloadManager()
+
     @Published var activeDownloads: [DownloadTask] = []
     @Published var downloadHistory: [DownloadRecord] = []
     @Published var downloadProgress: [UUID: Double] = [:]
 
+    @Published var cellularDownloadEnabled: Bool {
+        didSet { UserDefaults.standard.set(cellularDownloadEnabled, forKey: "cellularDownload") }
+    }
+    @Published var autoDownloadVideos: Bool {
+        didSet { UserDefaults.standard.set(autoDownloadVideos, forKey: "autoDownloadVideos") }
+    }
+    @Published var saveToPhotos: Bool {
+        didSet { UserDefaults.standard.set(saveToPhotos, forKey: "saveToPhotos") }
+    }
+
     private var foregroundSession: URLSession!
     private var backgroundSession: URLSession!
     private var backgroundCompletionHandler: (() -> Void)?
+    private var hlsDownloaders: [URL: HLSDownloader] = [:]
 
     private var isBackgroundDownload: Bool {
         UserDefaults.standard.bool(forKey: "backgroundDownload")
@@ -35,14 +46,20 @@ class DownloadManager: NSObject, ObservableObject {
     }
 
     override init() {
+        self.cellularDownloadEnabled = UserDefaults.standard.bool(forKey: "cellularDownload")
+        self.autoDownloadVideos = UserDefaults.standard.bool(forKey: "autoDownloadVideos")
+        self.saveToPhotos = UserDefaults.standard.bool(forKey: "saveToPhotos")
+
         super.init()
 
         let fgConfig = URLSessionConfiguration.default
+        fgConfig.allowsCellularAccess = cellularDownloadEnabled
         foregroundSession = URLSession(configuration: fgConfig, delegate: self, delegateQueue: .main)
 
         let bgConfig = URLSessionConfiguration.background(withIdentifier: "com.browserapp.downloads")
         bgConfig.isDiscretionary = false
         bgConfig.sessionSendsLaunchEvents = true
+        bgConfig.allowsCellularAccess = cellularDownloadEnabled
         backgroundSession = URLSession(configuration: bgConfig, delegate: self, delegateQueue: .main)
 
         loadHistory()
@@ -50,6 +67,10 @@ class DownloadManager: NSObject, ObservableObject {
 
     func handleBackgroundEvents(identifier: String, completionHandler: @escaping () -> Void) {
         backgroundCompletionHandler = completionHandler
+        if backgroundSession == nil || backgroundSession.configuration.identifier != identifier {
+            let config = URLSessionConfiguration.background(withIdentifier: identifier)
+            backgroundSession = URLSession(configuration: config, delegate: self, delegateQueue: .main)
+        }
     }
 
     func download(url: URL, fileName: String) {
@@ -57,11 +78,14 @@ class DownloadManager: NSObject, ObservableObject {
 
         if isHLS {
             let hlsDownloader = HLSDownloader()
+            hlsDownloaders[url] = hlsDownloader
+
             let task = DownloadTask(url: url, fileName: fileName, task: nil, isHLS: true)
             activeDownloads.append(task)
 
             hlsDownloader.download(m3u8URL: url) { [weak self] result in
                 DispatchQueue.main.async {
+                    self?.hlsDownloaders.removeValue(forKey: url)
                     self?.activeDownloads.removeAll { $0.url == url }
                     switch result {
                     case .success(let fileURL):
@@ -76,16 +100,22 @@ class DownloadManager: NSObject, ObservableObject {
         }
 
         let session = isBackgroundDownload ? backgroundSession : foregroundSession
-        let downloadTask = session?.downloadTask(with: url)
+        let downloadTask = session.downloadTask(with: url)
 
         let task = DownloadTask(url: url, fileName: fileName, task: downloadTask, isHLS: false)
         activeDownloads.append(task)
-        downloadTask?.resume()
+        downloadTask.resume()
     }
 
     func cancelDownload(id: UUID) {
         if let index = activeDownloads.firstIndex(where: { $0.id == id }) {
-            activeDownloads[index].task?.cancel()
+            let task = activeDownloads[index]
+            if task.isHLS {
+                hlsDownloaders[task.url]?.cancel()
+                hlsDownloaders.removeValue(forKey: task.url)
+            } else {
+                task.task?.cancel()
+            }
             activeDownloads.remove(at: index)
         }
     }
@@ -93,6 +123,30 @@ class DownloadManager: NSObject, ObservableObject {
     func clearHistory() {
         downloadHistory.removeAll()
         saveHistory()
+    }
+
+    func clearCache() {
+        let tempDir = FileManager.default.temporaryDirectory
+        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+
+        do {
+            let tempFiles = try FileManager.default.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil)
+            for file in tempFiles {
+                try FileManager.default.removeItem(at: file)
+            }
+            let docFiles = try FileManager.default.contentsOfDirectory(at: documentsDir, includingPropertiesForKeys: nil)
+            for file in docFiles where file.lastPathComponent.hasPrefix(".tmp_") {
+                try FileManager.default.removeItem(at: file)
+            }
+        } catch {
+            print("Cache clear error: \(error)")
+        }
+    }
+
+    func updateCellularAccess(_ enabled: Bool) {
+        cellularDownloadEnabled = enabled
+        foregroundSession.configuration.allowsCellularAccess = enabled
+        backgroundSession.configuration.allowsCellularAccess = enabled
     }
 
     private func saveToFiles(sourceURL: URL, fileName: String) {
@@ -176,7 +230,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
     ) {
         guard let index = activeDownloads.firstIndex(where: { $0.task?.taskIdentifier == downloadTask.taskIdentifier }) else { return }
 
-        let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+        let progress = totalBytesExpectedToWrite > 0 ? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite) : 0
         activeDownloads[index].progress = progress
         downloadProgress[activeDownloads[index].id] = progress
     }

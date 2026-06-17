@@ -1,5 +1,3 @@
-// BrowserApp/BrowserApp/UI/DownloadSheet.swift
-
 import SwiftUI
 
 struct DownloadSheet: View {
@@ -21,26 +19,57 @@ struct DownloadSheet: View {
                     }
                 }
 
+                if !videos.isEmpty || !subtitles.isEmpty {
+                    Section {
+                        Button(action: downloadAll) {
+                            HStack {
+                                Image(systemName: "arrow.down.to.line")
+                                Text("Tümünü İndir (\(videos.count + subtitles.count))")
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(Color.blue)
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                    }
+                }
+
                 if !videos.isEmpty {
                     Section(header: Text("Videolar (\(videos.count))")) {
                         ForEach(videos.prefix(5)) { video in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(video.fileName)
-                                    .font(.body)
-                                    .lineLimit(1)
+                            Button {
+                                downloadManager.download(url: video.url, fileName: video.fileName)
+                                dismiss()
+                            } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(video.fileName)
+                                        .font(.body)
+                                        .lineLimit(1)
+                                        .foregroundColor(.primary)
 
-                                HStack {
-                                    Text(video.format)
-                                        .font(.caption)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Color.blue.opacity(0.2))
-                                        .cornerRadius(4)
-
-                                    if let size = video.estimatedSize {
-                                        Text(size)
+                                    HStack {
+                                        Text(video.format)
                                             .font(.caption)
-                                            .foregroundColor(.secondary)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.blue.opacity(0.2))
+                                            .cornerRadius(4)
+
+                                        if let size = video.estimatedSize {
+                                            Text(size)
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+
+                                        Spacer()
+
+                                        Image(systemName: "arrow.down.circle")
+                                            .foregroundColor(.blue)
+                                            .font(.caption)
                                     }
                                 }
                             }
@@ -70,14 +99,28 @@ struct DownloadSheet: View {
                 if !subtitles.isEmpty {
                     Section(header: Text("Altyazılar (\(subtitles.count))")) {
                         ForEach(subtitles.prefix(3)) { subtitle in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(subtitle.fileName)
-                                    .font(.body)
-                                    .lineLimit(1)
+                            Button {
+                                downloadManager.download(url: subtitle.url, fileName: subtitle.fileName)
+                                dismiss()
+                            } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(subtitle.fileName)
+                                        .font(.body)
+                                        .lineLimit(1)
+                                        .foregroundColor(.primary)
 
-                                Text(subtitle.format)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    HStack {
+                                        Text(subtitle.format)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+
+                                        Spacer()
+
+                                        Image(systemName: "arrow.down.circle")
+                                            .foregroundColor(.blue)
+                                            .font(.caption)
+                                    }
+                                }
                             }
                             .swipeActions(edge: .trailing) {
                                 Button("İndir") {
@@ -112,5 +155,15 @@ struct DownloadSheet: View {
                 }
             }
         }
+    }
+
+    private func downloadAll() {
+        for video in videos {
+            downloadManager.download(url: video.url, fileName: video.fileName)
+        }
+        for subtitle in subtitles {
+            downloadManager.download(url: subtitle.url, fileName: subtitle.fileName)
+        }
+        dismiss()
     }
 }

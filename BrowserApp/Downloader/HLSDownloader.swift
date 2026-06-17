@@ -1,5 +1,3 @@
-// BrowserApp/BrowserApp/Downloader/HLSDownloader.swift
-
 import Foundation
 import AVFoundation
 
@@ -19,44 +17,52 @@ class HLSDownloader {
         self.completion = completion
 
         URLSession.shared.dataTask(with: m3u8URL) { [weak self] data, response, error in
-            guard let self = self, let data = data, error == nil else {
+            guard let self = self else {
+                DispatchQueue.main.async {
+                    completion(.failure(HLSError.invalidPlaylist))
+                }
+                return
+            }
+
+            guard let data = data, error == nil else {
                 DispatchQueue.main.async {
                     completion(.failure(error ?? HLSError.invalidPlaylist))
                 }
                 return
             }
 
-            do {
-                let content = String(data: data, encoding: .utf8) ?? ""
-                let segments = try self.parseM3U8(content: content, baseURL: m3u8URL)
+            let content = String(data: data, encoding: .utf8) ?? ""
 
-                guard !segments.isEmpty else {
-                    DispatchQueue.main.async {
-                        completion(.failure(HLSError.noSegmentsFound))
+            self.parseM3U8(content: content, baseURL: m3u8URL) { [weak self] result in
+                guard let self = self else { return }
+
+                switch result {
+                case .success(let segments):
+                    guard !segments.isEmpty else {
+                        DispatchQueue.main.async {
+                            completion(.failure(HLSError.noSegmentsFound))
+                        }
+                        return
                     }
-                    return
-                }
-
-                self.downloadSegments(segments)
-            } catch {
-                DispatchQueue.main.async {
-                    completion(.failure(error))
+                    self.downloadSegments(segments)
+                case .failure(let error):
+                    DispatchQueue.main.async {
+                        completion(.failure(error))
+                    }
                 }
             }
         }.resume()
     }
 
-    private func parseM3U8(content: String, baseURL: URL) throws -> [URL] {
+    private func parseM3U8(content: String, baseURL: URL, completion: @escaping (Result<[URL], Error>) -> Void) {
         var segments: [URL] = []
         let lines = content.components(separatedBy: .newlines)
 
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-
             if trimmed.isEmpty || trimmed.hasPrefix("#") {
                 continue
             }
-
             if let segmentURL = URL(string: trimmed, relativeTo: baseURL) {
                 segments.append(segmentURL)
             } else if let segmentURL = URL(string: trimmed) {
@@ -72,7 +78,8 @@ class HLSDownloader {
                         let nextLine = lines[index + 1].trimmingCharacters(in: .whitespaces)
                         if !nextLine.isEmpty && !nextLine.hasPrefix("#") {
                             if let variantURL = URL(string: nextLine, relativeTo: baseURL) {
-                                return try fetchVariantPlaylist(url: variantURL)
+                                fetchVariantPlaylist(url: variantURL, completion: completion)
+                                return
                             }
                         }
                     }
@@ -80,18 +87,15 @@ class HLSDownloader {
             }
         }
 
-        return segments
+        completion(.success(segments))
     }
 
-    private func fetchVariantPlaylist(url: URL) throws -> [URL] {
-        var result: Result<[URL], Error> = .failure(HLSError.fetchFailed)
-        let semaphore = DispatchSemaphore(value: 0)
-
+    private func fetchVariantPlaylist(url: URL, completion: @escaping (Result<[URL], Error>) -> Void) {
         URLSession.shared.dataTask(with: url) { data, response, error in
-            defer { semaphore.signal() }
-
             guard let data = data, error == nil else {
-                result = .failure(error ?? HLSError.fetchFailed)
+                DispatchQueue.main.async {
+                    completion(.failure(error ?? HLSError.fetchFailed))
+                }
                 return
             }
 
@@ -108,11 +112,10 @@ class HLSDownloader {
                 }
             }
 
-            result = .success(segments)
+            DispatchQueue.main.async {
+                completion(.success(segments))
+            }
         }.resume()
-
-        semaphore.wait()
-        return try result.get()
     }
 
     private func downloadSegments(_ segmentURLs: [URL]) {
@@ -200,5 +203,7 @@ class HLSDownloader {
     func cancel() {
         activeTasks.forEach { $0.cancel() }
         activeTasks.removeAll()
+        downloadSession?.invalidateAndCancel()
+        downloadSession = nil
     }
 }

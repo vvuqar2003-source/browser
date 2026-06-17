@@ -1,5 +1,3 @@
-// BrowserApp/BrowserApp/Browser/BrowserViewModel.swift
-
 import SwiftUI
 import WebKit
 import Combine
@@ -39,11 +37,11 @@ class BrowserViewModel: NSObject, ObservableObject {
     @Published var canGoForward: Bool = false
     @Published var detectedVideos: [DetectedVideo] = []
     @Published var detectedSubtitles: [DetectedSubtitle] = []
-    @Published var showVideoOverlay: Bool = false
     @Published var showDownloadSheet: Bool = false
     @Published var showVideoListSheet: Bool = false
     @Published var showSubtitleListSheet: Bool = false
     @Published var currentVideoURL: String = ""
+    @Published var detectedCount: Int = 0
 
     private var seenVideoURLs = Set<String>()
     private var seenSubtitleURLs = Set<String>()
@@ -97,6 +95,13 @@ class BrowserViewModel: NSObject, ObservableObject {
         loadURL()
     }
 
+    func scanAndShowDownloadSheet() {
+        webView?.evaluateJavaScript("manualScan()")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            self?.showDownloadSheet = true
+        }
+    }
+
     func addVideo(url: URL, pageTitle: String) {
         let urlString = url.absoluteString
         guard !seenVideoURLs.contains(urlString) else { return }
@@ -127,7 +132,7 @@ class BrowserViewModel: NSObject, ObservableObject {
 
         DispatchQueue.main.async {
             self.detectedVideos.append(video)
-            self.showVideoOverlay = true
+            self.detectedCount = self.detectedVideos.count + self.detectedSubtitles.count
         }
     }
 
@@ -149,6 +154,7 @@ class BrowserViewModel: NSObject, ObservableObject {
 
         DispatchQueue.main.async {
             self.detectedSubtitles.append(subtitle)
+            self.detectedCount = self.detectedVideos.count + self.detectedSubtitles.count
         }
     }
 
@@ -157,7 +163,7 @@ class BrowserViewModel: NSObject, ObservableObject {
         detectedSubtitles.removeAll()
         seenVideoURLs.removeAll()
         seenSubtitleURLs.removeAll()
-        showVideoOverlay = false
+        detectedCount = 0
     }
 }
 
@@ -175,6 +181,7 @@ extension BrowserViewModel: WKNavigationDelegate {
             self.pageTitle = webView.title ?? ""
             self.canGoBack = webView.canGoBack
             self.canGoForward = webView.canGoForward
+            self.clearDetected()
         }
     }
 
