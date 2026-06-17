@@ -16,7 +16,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+
+      - name: List schemes
+        run: xcodebuild -project BrowserApp.xcodeproj -list
 
       - name: Build archive
         run: |
@@ -25,14 +30,19 @@ jobs:
             -scheme BrowserApp \
             -archivePath $PWD/build/BrowserApp.xcarchive \
             -destination "generic/platform=iOS" \
+            -allowProvisioningUpdates \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
             AD_HOC_CODE_SIGNING_ALLOWED=YES \
-            ENABLE_BITCODE=NO
+            ENABLE_BITCODE=NO \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            ENABLE_PREVIEWS=NO
 
       - name: Create ExportOptions.plist
         run: |
-          cat > build/ExportOptions.plist << EOF
+          cat > build/ExportOptions.plist << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
