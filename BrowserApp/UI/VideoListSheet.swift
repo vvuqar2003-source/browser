@@ -1,9 +1,8 @@
-// BrowserApp/BrowserApp/UI/VideoListSheet.swift
-
 import SwiftUI
 
 struct VideoListSheet: View {
     let videos: [DetectedVideo]
+    let viewModel: BrowserViewModel
     let downloadManager: DownloadManager
 
     @Environment(\.dismiss) private var dismiss
@@ -45,7 +44,7 @@ struct VideoListSheet: View {
                 .padding(.vertical, 4)
                 .swipeActions(edge: .trailing) {
                     Button("İndir") {
-                        downloadManager.download(url: video.url, fileName: video.fileName)
+                        viewModel.downloadVideo(video, with: downloadManager)
                     }
                     .tint(.blue)
                 }

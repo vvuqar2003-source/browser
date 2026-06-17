@@ -103,6 +103,54 @@ class BrowserViewModel: NSObject, ObservableObject {
         }
     }
 
+    private func getDownloadHeaders(for url: URL, completion: @escaping ([String: String]?) -> Void) {
+        guard let webView = webView else {
+            completion(nil)
+            return
+        }
+
+        let pageURL = webView.url?.absoluteString
+
+        webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+            var headers: [String: String] = [:]
+
+            let relevantCookies = cookies.filter { cookie in
+                guard let host = url.host else { return false }
+                let domain = cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain
+                return host.hasSuffix(domain)
+            }
+
+            if !relevantCookies.isEmpty {
+                headers["Cookie"] = relevantCookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+            }
+
+            if let pageURL = pageURL {
+                headers["Referer"] = pageURL
+            }
+
+            webView.evaluateJavaScript("navigator.userAgent") { result, _ in
+                if let ua = result as? String {
+                    headers["User-Agent"] = ua
+                }
+                DispatchQueue.main.async {
+                    completion(headers.isEmpty ? nil : headers)
+                }
+            }
+        }
+    }
+
+    func downloadVideo(_ video: DetectedVideo, with downloadManager: DownloadManager) {
+        getDownloadHeaders(for: video.url) { headers in
+            downloadManager.download(url: video.url, fileName: video.fileName, headers: headers)
+        }
+    }
+
+    func downloadSubtitle(_ subtitle: DetectedSubtitle, with downloadManager: DownloadManager) {
+        getDownloadHeaders(for: subtitle.url) { headers in
+            downloadManager.download(url: subtitle.url, fileName: subtitle.fileName, headers: headers)
+        }
+    }
+
     func addVideo(url: URL, pageTitle: String) {
         let urlString = url.absoluteString
         guard !seenVideoURLs.contains(urlString) else { return }

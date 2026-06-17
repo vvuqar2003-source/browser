@@ -1,45 +1,33 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var showSettings = false
-    @State private var showDownloads = false
+    @StateObject private var tabManager = TabManager()
 
     var body: some View {
-        NavigationView {
-            BrowserView()
-                .toolbar {
-                    ToolbarItemGroup(placement: .navigationBarTrailing) {
-                        Button {
-                            showDownloads = true
-                        } label: {
-                            Image(systemName: "arrow.down.to.line")
-                        }
+        TabView {
+            BrowserContainerView(tabManager: tabManager)
+                .tabItem {
+                    Label("Tarayıcı", systemImage: "globe")
+                }
+                .tag(0)
 
-                        Button {
-                            showSettings = true
-                        } label: {
-                            Image(systemName: "gear")
-                        }
-                    }
+            DownloadsListView()
+                .tabItem {
+                    Label("İndirmeler", systemImage: "arrow.down.to.line")
                 }
-                .sheet(isPresented: $showDownloads) {
-                    DownloadsListView()
-                }
-                .sheet(isPresented: $showSettings) {
-                    NavigationView {
-                        SettingsView()
-                            .navigationTitle("Ayarlar")
-                            .navigationBarTitleDisplayMode(.inline)
-                            .toolbar {
-                                ToolbarItem(placement: .navigationBarTrailing) {
-                                    Button("Kapat") {
-                                        showSettings = false
-                                    }
-                                }
-                            }
-                    }
-                }
+                .tag(1)
+
+            NavigationView {
+                SettingsView()
+                    .navigationTitle("Ayarlar")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+            .navigationViewStyle(.stack)
+            .tabItem {
+                Label("Ayarlar", systemImage: "gear")
+            }
+            .tag(2)
         }
-        .navigationViewStyle(.stack)
+        .tint(.blue)
     }
 }

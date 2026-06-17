@@ -8,6 +8,7 @@ class DownloadManager: NSObject, ObservableObject {
     @Published var activeDownloads: [DownloadTask] = []
     @Published var downloadHistory: [DownloadRecord] = []
     @Published var downloadProgress: [UUID: Double] = [:]
+    @Published var downloadError: String?
 
     @Published var cellularDownloadEnabled: Bool {
         didSet { UserDefaults.standard.set(cellularDownloadEnabled, forKey: "cellularDownload") }
@@ -35,6 +36,8 @@ class DownloadManager: NSObject, ObservableObject {
         var task: URLSessionDownloadTask?
         var progress: Double = 0
         var isHLS: Bool
+        var isBackground: Bool
+        var error: String?
     }
 
     struct DownloadRecord: Identifiable, Codable {
@@ -73,25 +76,29 @@ class DownloadManager: NSObject, ObservableObject {
         }
     }
 
-    func download(url: URL, fileName: String) {
+    func download(url: URL, fileName: String, headers: [String: String]? = nil) {
+        downloadError = nil
         let isHLS = url.pathExtension.lowercased() == "m3u8"
+        let useBackground = isBackgroundDownload
 
         if isHLS {
             let hlsDownloader = HLSDownloader()
             hlsDownloaders[url] = hlsDownloader
 
-            let task = DownloadTask(url: url, fileName: fileName, task: nil, isHLS: true)
+            let task = DownloadTask(url: url, fileName: fileName, task: nil, isHLS: true, isBackground: useBackground)
             activeDownloads.append(task)
 
             hlsDownloader.download(m3u8URL: url) { [weak self] result in
                 DispatchQueue.main.async {
-                    self?.hlsDownloaders.removeValue(forKey: url)
-                    self?.activeDownloads.removeAll { $0.url == url }
+                    guard let self = self else { return }
+                    self.hlsDownloaders.removeValue(forKey: url)
+                    self.activeDownloads.removeAll { $0.url == url }
                     switch result {
                     case .success(let fileURL):
-                        self?.saveToFiles(sourceURL: fileURL, fileName: fileName)
-                        self?.addRecord(fileName: fileName, url: url.absoluteString, fileSize: "N/A")
+                        self.saveToFiles(sourceURL: fileURL, fileName: fileName)
+                        self.addRecord(fileName: fileName, url: url.absoluteString, fileSize: "N/A")
                     case .failure(let error):
+                        self.downloadError = "HLS hatasi: \(error.localizedDescription)"
                         print("HLS download failed: \(error)")
                     }
                 }
@@ -99,10 +106,12 @@ class DownloadManager: NSObject, ObservableObject {
             return
         }
 
-        let session: URLSession = isBackgroundDownload ? backgroundSession : foregroundSession
-        let downloadTask = session.downloadTask(with: url)
+        let session: URLSession = useBackground ? backgroundSession : foregroundSession
+        var request = URLRequest(url: url)
+        headers?.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
+        let downloadTask = session.downloadTask(with: request)
 
-        let task = DownloadTask(url: url, fileName: fileName, task: downloadTask, isHLS: false)
+        let task = DownloadTask(url: url, fileName: fileName, task: downloadTask, isHLS: false, isBackground: useBackground)
         activeDownloads.append(task)
         downloadTask.resume()
     }
@@ -117,6 +126,7 @@ class DownloadManager: NSObject, ObservableObject {
                 task.task?.cancel()
             }
             activeDownloads.remove(at: index)
+            downloadProgress.removeValue(forKey: id)
         }
     }
 
@@ -160,6 +170,7 @@ class DownloadManager: NSObject, ObservableObject {
             try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
         } catch {
             print("File save error: \(error)")
+            downloadError = "Kayit hatasi: \(error.localizedDescription)"
         }
     }
 
@@ -201,6 +212,13 @@ class DownloadManager: NSObject, ObservableObject {
             UserDefaults.standard.set(data, forKey: "downloadHistory")
         }
     }
+
+    private func findTaskIndex(for downloadTask: URLSessionDownloadTask, in session: URLSession) -> Int? {
+        let isBG = session.configuration.identifier != nil
+        return activeDownloads.firstIndex(where: {
+            $0.task?.taskIdentifier == downloadTask.taskIdentifier && $0.isBackground == isBG
+        })
+    }
 }
 
 extension DownloadManager: URLSessionDownloadDelegate {
@@ -209,7 +227,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
     ) {
-        guard let index = activeDownloads.firstIndex(where: { $0.task?.taskIdentifier == downloadTask.taskIdentifier }) else { return }
+        guard let index = findTaskIndex(for: downloadTask, in: session) else { return }
 
         let task = activeDownloads[index]
         let fileName = task.fileName
@@ -228,11 +246,29 @@ extension DownloadManager: URLSessionDownloadDelegate {
         totalBytesWritten: Int64,
         totalBytesExpectedToWrite: Int64
     ) {
-        guard let index = activeDownloads.firstIndex(where: { $0.task?.taskIdentifier == downloadTask.taskIdentifier }) else { return }
+        guard let index = findTaskIndex(for: downloadTask, in: session) else { return }
 
         let progress = totalBytesExpectedToWrite > 0 ? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite) : 0
         activeDownloads[index].progress = progress
         downloadProgress[activeDownloads[index].id] = progress
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        guard let downloadTask = task as? URLSessionDownloadTask,
+              let index = findTaskIndex(for: downloadTask, in: session) else { return }
+
+        if let error = error {
+            let taskId = activeDownloads[index].id
+            activeDownloads[index].error = error.localizedDescription
+            downloadError = "Indirme hatasi: \(error.localizedDescription)"
+            print("Download failed: \(error.localizedDescription)")
+            activeDownloads.remove(at: index)
+            downloadProgress.removeValue(forKey: taskId)
+        }
     }
 
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {

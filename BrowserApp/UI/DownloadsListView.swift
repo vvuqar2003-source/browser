@@ -2,7 +2,8 @@ import SwiftUI
 
 struct DownloadsListView: View {
     @EnvironmentObject var downloadManager: DownloadManager
-    @Environment(\.dismiss) private var dismiss
+    @State private var shareURL: URL?
+    @State private var showShareSheet = false
 
     var body: some View {
         NavigationView {
@@ -41,9 +42,16 @@ struct DownloadsListView: View {
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                     Spacer()
-                                    Text(task.isHLS ? "Birleştiriliyor..." : "İndiriliyor")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+                                    if let error = task.error {
+                                        Text(error)
+                                            .font(.caption)
+                                            .foregroundColor(.red)
+                                            .lineLimit(1)
+                                    } else {
+                                        Text(task.isHLS ? "Birleştiriliyor..." : "İndiriliyor")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
                                 }
                             }
                             .padding(.vertical, 4)
@@ -54,19 +62,45 @@ struct DownloadsListView: View {
                 if !downloadManager.downloadHistory.isEmpty {
                     Section(header: Text("İndirme Geçmişi")) {
                         ForEach(downloadManager.downloadHistory) { record in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(record.fileName)
-                                    .font(.body)
-                                    .lineLimit(1)
+                            Button {
+                                let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                                let fileURL = documentsPath.appendingPathComponent(record.fileName)
+                                if FileManager.default.fileExists(atPath: fileURL.path) {
+                                    shareURL = fileURL
+                                    showShareSheet = true
+                                }
+                            } label: {
                                 HStack {
-                                    Text(record.date, style: .date)
-                                    Text(record.date, style: .time)
-                                    if !record.fileSize.isEmpty {
-                                        Text("• \(record.fileSize)")
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(record.fileName)
+                                            .font(.body)
+                                            .lineLimit(1)
+                                            .foregroundColor(.primary)
+                                        HStack {
+                                            Text(record.date, style: .date)
+                                            Text(record.date, style: .time)
+                                            if !record.fileSize.isEmpty {
+                                                Text("• \(record.fileSize)")
+                                            }
+                                        }
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    }
+
+                                    Spacer()
+
+                                    let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                                    let fileURL = documentsPath.appendingPathComponent(record.fileName)
+                                    if FileManager.default.fileExists(atPath: fileURL.path) {
+                                        Image(systemName: "square.and.arrow.up")
+                                            .foregroundColor(.blue)
+                                            .font(.caption)
+                                    } else {
+                                        Image(systemName: "exclamationmark.triangle")
+                                            .foregroundColor(.orange)
+                                            .font(.caption)
                                     }
                                 }
-                                .font(.caption)
-                                .foregroundColor(.secondary)
                             }
                         }
 
@@ -86,7 +120,7 @@ struct DownloadsListView: View {
                                 .foregroundColor(.secondary)
                             Text("Hiç indirme yok")
                                 .foregroundColor(.secondary)
-                            Text("Bir videoyu indirmek için tarayıcıda indirme butonuna basın.")
+                            Text("Bir videoyu indirmek için tarayıcıya gidin\nve indirme butonuna basın.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.center)
@@ -95,16 +129,37 @@ struct DownloadsListView: View {
                         .padding(.vertical, 30)
                     }
                 }
-            }
-            .navigationTitle("İndirmeler")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Kapat") {
-                        dismiss()
+
+                if let error = downloadManager.downloadError {
+                    Section {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.red)
+                            Text(error)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
                     }
                 }
             }
+            .navigationTitle("İndirmeler")
+            .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $showShareSheet) {
+                if let url = shareURL {
+                    ShareSheet(activityItems: [url])
+                }
+            }
         }
+        .navigationViewStyle(.stack)
     }
+}
+
+struct ShareSheet: UIViewControllerRepresentable {
+    let activityItems: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

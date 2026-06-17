@@ -3,6 +3,7 @@ import SwiftUI
 struct DownloadSheet: View {
     let videos: [DetectedVideo]
     let subtitles: [DetectedSubtitle]
+    let viewModel: BrowserViewModel
     let downloadManager: DownloadManager
     let onShowAllVideos: () -> Void
     let onShowAllSubtitles: () -> Void
@@ -42,7 +43,7 @@ struct DownloadSheet: View {
                     Section(header: Text("Videolar (\(videos.count))")) {
                         ForEach(videos.prefix(5)) { video in
                             Button {
-                                downloadManager.download(url: video.url, fileName: video.fileName)
+                                viewModel.downloadVideo(video, with: downloadManager)
                                 dismiss()
                             } label: {
                                 VStack(alignment: .leading, spacing: 4) {
@@ -75,7 +76,7 @@ struct DownloadSheet: View {
                             }
                             .swipeActions(edge: .trailing) {
                                 Button("İndir") {
-                                    downloadManager.download(url: video.url, fileName: video.fileName)
+                                    viewModel.downloadVideo(video, with: downloadManager)
                                     dismiss()
                                 }
                                 .tint(.blue)
@@ -100,7 +101,7 @@ struct DownloadSheet: View {
                     Section(header: Text("Altyazılar (\(subtitles.count))")) {
                         ForEach(subtitles.prefix(3)) { subtitle in
                             Button {
-                                downloadManager.download(url: subtitle.url, fileName: subtitle.fileName)
+                                viewModel.downloadSubtitle(subtitle, with: downloadManager)
                                 dismiss()
                             } label: {
                                 VStack(alignment: .leading, spacing: 4) {
@@ -124,7 +125,7 @@ struct DownloadSheet: View {
                             }
                             .swipeActions(edge: .trailing) {
                                 Button("İndir") {
-                                    downloadManager.download(url: subtitle.url, fileName: subtitle.fileName)
+                                    viewModel.downloadSubtitle(subtitle, with: downloadManager)
                                     dismiss()
                                 }
                                 .tint(.blue)
@@ -159,10 +160,10 @@ struct DownloadSheet: View {
 
     private func downloadAll() {
         for video in videos {
-            downloadManager.download(url: video.url, fileName: video.fileName)
+            viewModel.downloadVideo(video, with: downloadManager)
         }
         for subtitle in subtitles {
-            downloadManager.download(url: subtitle.url, fileName: subtitle.fileName)
+            viewModel.downloadSubtitle(subtitle, with: downloadManager)
         }
         dismiss()
     }
