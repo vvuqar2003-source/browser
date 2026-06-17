@@ -5,29 +5,46 @@ class HLSDownloader {
     private var downloadSession: URLSession?
     private var activeTasks: [URLSessionDataTask] = []
     private var completion: ((Result<URL, Error>) -> Void)?
+    private var headers: [String: String]?
 
-    enum HLSError: Error {
+    enum HLSError: Error, LocalizedError {
         case invalidPlaylist
         case noSegmentsFound
         case mergeFailed
         case fetchFailed
+        case httpError(Int)
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidPlaylist: return "Geçersiz HLS playlist"
+            case .noSegmentsFound: return "HLS segmenti bulunamadı"
+            case .mergeFailed: return "Segment birleştirme hatası"
+            case .fetchFailed: return "Playlist indirilemedi"
+            case .httpError(let code): return "HTTP hatası: \(code)"
+            }
+        }
     }
 
-    func download(m3u8URL: URL, completion: @escaping (Result<URL, Error>) -> Void) {
+    func download(m3u8URL: URL, headers: [String: String]? = nil, completion: @escaping (Result<URL, Error>) -> Void) {
         self.completion = completion
+        self.headers = headers
 
-        URLSession.shared.dataTask(with: m3u8URL) { [weak self] data, response, error in
+        var request = URLRequest(url: m3u8URL)
+        headers?.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else {
-                DispatchQueue.main.async {
-                    completion(.failure(HLSError.invalidPlaylist))
-                }
+                DispatchQueue.main.async { completion(.failure(HLSError.invalidPlaylist)) }
+                return
+            }
+
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+                DispatchQueue.main.async { completion(.failure(HLSError.httpError(httpResponse.statusCode))) }
                 return
             }
 
             guard let data = data, error == nil else {
-                DispatchQueue.main.async {
-                    completion(.failure(error ?? HLSError.invalidPlaylist))
-                }
+                DispatchQueue.main.async { completion(.failure(error ?? HLSError.invalidPlaylist)) }
                 return
             }
 
@@ -35,20 +52,15 @@ class HLSDownloader {
 
             self.parseM3U8(content: content, baseURL: m3u8URL) { [weak self] result in
                 guard let self = self else { return }
-
                 switch result {
                 case .success(let segments):
                     guard !segments.isEmpty else {
-                        DispatchQueue.main.async {
-                            completion(.failure(HLSError.noSegmentsFound))
-                        }
+                        DispatchQueue.main.async { completion(.failure(HLSError.noSegmentsFound)) }
                         return
                     }
                     self.downloadSegments(segments)
                 case .failure(let error):
-                    DispatchQueue.main.async {
-                        completion(.failure(error))
-                    }
+                    DispatchQueue.main.async { completion(.failure(error)) }
                 }
             }
         }.resume()
@@ -60,9 +72,7 @@ class HLSDownloader {
 
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty || trimmed.hasPrefix("#") {
-                continue
-            }
+            if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
             if let segmentURL = URL(string: trimmed, relativeTo: baseURL) {
                 segments.append(segmentURL)
             } else if let segmentURL = URL(string: trimmed) {
@@ -70,6 +80,7 @@ class HLSDownloader {
             }
         }
 
+        // If no segments found, look for variant playlist
         if segments.isEmpty {
             for (index, line) in lines.enumerated() {
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -91,11 +102,12 @@ class HLSDownloader {
     }
 
     private func fetchVariantPlaylist(url: URL, completion: @escaping (Result<[URL], Error>) -> Void) {
-        URLSession.shared.dataTask(with: url) { data, response, error in
+        var request = URLRequest(url: url)
+        headers?.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
             guard let data = data, error == nil else {
-                DispatchQueue.main.async {
-                    completion(.failure(error ?? HLSError.fetchFailed))
-                }
+                DispatchQueue.main.async { completion(.failure(error ?? HLSError.fetchFailed)) }
                 return
             }
 
@@ -112,9 +124,7 @@ class HLSDownloader {
                 }
             }
 
-            DispatchQueue.main.async {
-                completion(.success(segments))
-            }
+            DispatchQueue.main.async { completion(.success(segments)) }
         }.resume()
     }
 
@@ -129,8 +139,16 @@ class HLSDownloader {
         for (index, segmentURL) in segmentURLs.enumerated() {
             group.enter()
 
-            let task = session.dataTask(with: segmentURL) { data, response, error in
+            var request = URLRequest(url: segmentURL)
+            headers?.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
+
+            let task = session.dataTask(with: request) { data, response, error in
                 defer { group.leave() }
+
+                // Check HTTP status
+                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+                    return
+                }
 
                 if let data = data {
                     lock.lock()
@@ -144,6 +162,11 @@ class HLSDownloader {
 
         group.notify(queue: .main) { [weak self] in
             guard let self = self else { return }
+
+            if collectedData.count < segmentURLs.count / 2 {
+                self.completion?(.failure(HLSError.fetchFailed))
+                return
+            }
 
             let sortedData = collectedData.sorted { $0.key < $1.key }.map { $0.value }
             self.mergeSegments(sortedData)

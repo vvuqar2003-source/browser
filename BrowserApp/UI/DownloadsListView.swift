@@ -11,50 +11,7 @@ struct DownloadsListView: View {
                 if !downloadManager.activeDownloads.isEmpty {
                     Section(header: Text("Aktif İndirmeler")) {
                         ForEach(downloadManager.activeDownloads) { task in
-                            VStack(spacing: 8) {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(task.fileName)
-                                            .font(.body)
-                                            .lineLimit(1)
-                                        Text(task.isHLS ? "HLS" : task.url.lastPathComponent)
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                            .lineLimit(1)
-                                    }
-
-                                    Spacer()
-
-                                    Button {
-                                        downloadManager.cancelDownload(id: task.id)
-                                    } label: {
-                                        Image(systemName: "xmark.circle.fill")
-                                            .foregroundColor(.red)
-                                            .font(.title3)
-                                    }
-                                }
-
-                                ProgressView(value: downloadManager.downloadProgress[task.id] ?? 0)
-                                    .tint(.blue)
-
-                                HStack {
-                                    Text("\(Int((downloadManager.downloadProgress[task.id] ?? 0) * 100))%")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                    Spacer()
-                                    if let error = task.error {
-                                        Text(error)
-                                            .font(.caption)
-                                            .foregroundColor(.red)
-                                            .lineLimit(1)
-                                    } else {
-                                        Text(task.isHLS ? "Birleştiriliyor..." : "İndiriliyor")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                            }
-                            .padding(.vertical, 4)
+                            ActiveDownloadRow(task: task, downloadManager: downloadManager)
                         }
                     }
                 }
@@ -62,45 +19,9 @@ struct DownloadsListView: View {
                 if !downloadManager.downloadHistory.isEmpty {
                     Section(header: Text("İndirme Geçmişi")) {
                         ForEach(downloadManager.downloadHistory) { record in
-                            Button {
-                                let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                                let fileURL = documentsPath.appendingPathComponent(record.fileName)
-                                if FileManager.default.fileExists(atPath: fileURL.path) {
-                                    shareURL = fileURL
-                                    showShareSheet = true
-                                }
-                            } label: {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(record.fileName)
-                                            .font(.body)
-                                            .lineLimit(1)
-                                            .foregroundColor(.primary)
-                                        HStack {
-                                            Text(record.date, style: .date)
-                                            Text(record.date, style: .time)
-                                            if !record.fileSize.isEmpty {
-                                                Text("• \(record.fileSize)")
-                                            }
-                                        }
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                    }
-
-                                    Spacer()
-
-                                    let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                                    let fileURL = documentsPath.appendingPathComponent(record.fileName)
-                                    if FileManager.default.fileExists(atPath: fileURL.path) {
-                                        Image(systemName: "square.and.arrow.up")
-                                            .foregroundColor(.blue)
-                                            .font(.caption)
-                                    } else {
-                                        Image(systemName: "exclamationmark.triangle")
-                                            .foregroundColor(.orange)
-                                            .font(.caption)
-                                    }
-                                }
+                            DownloadHistoryRow(record: record) { url in
+                                shareURL = url
+                                showShareSheet = true
                             }
                         }
 
@@ -153,6 +74,159 @@ struct DownloadsListView: View {
         .navigationViewStyle(.stack)
     }
 }
+
+// MARK: - Active Download Row
+
+struct ActiveDownloadRow: View {
+    let task: DownloadManager.DownloadTask
+    let downloadManager: DownloadManager
+
+    var progress: DownloadManager.DownloadProgress? {
+        downloadManager.downloadProgress[task.id]
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(task.fileName)
+                        .font(.body)
+                        .lineLimit(1)
+                    Text(task.isHLS ? "HLS Stream" : task.url.host ?? "")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Button {
+                    downloadManager.cancelDownload(id: task.id)
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.red)
+                        .font(.title3)
+                }
+            }
+
+            // Progress bar
+            ProgressView(value: progress?.fraction ?? task.progress)
+                .tint(task.error != nil ? .red : .blue)
+
+            // Stats row
+            HStack {
+                // Percentage
+                Text("\(Int((progress?.fraction ?? task.progress) * 100))%")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+
+                // Downloaded / Total
+                if let p = progress, p.totalBytesWritten > 0 {
+                    Text("• \(p.downloadedText) / \(p.totalText)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                // Speed
+                if let p = progress, !p.speedText.isEmpty {
+                    Text(p.speedText)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.blue)
+                }
+            }
+
+            // Error
+            if let error = task.error {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                        .lineLimit(2)
+                }
+            }
+
+            // Status
+            if task.error == nil {
+                HStack {
+                    Text(task.statusText)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Download History Row
+
+struct DownloadHistoryRow: View {
+    let record: DownloadManager.DownloadRecord
+    let onShare: (URL) -> Void
+
+    var body: some View {
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let fileURL = documentsPath.appendingPathComponent(record.fileName)
+        let fileExists = FileManager.default.fileExists(atPath: fileURL.path)
+
+        Button {
+            if fileExists {
+                onShare(fileURL)
+            }
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        // Status icon
+                        Image(systemName: record.success ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .font(.caption)
+                            .foregroundColor(record.success ? .green : .red)
+
+                        Text(record.fileName)
+                            .font(.body)
+                            .lineLimit(1)
+                            .foregroundColor(.primary)
+                    }
+
+                    HStack(spacing: 6) {
+                        Text(record.date, style: .date)
+                        Text(record.date, style: .time)
+
+                        Text("•")
+
+                        Text(record.fileSize)
+                            .fontWeight(.medium)
+                    }
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                if record.success && fileExists {
+                    Image(systemName: "square.and.arrow.up")
+                        .foregroundColor(.blue)
+                        .font(.body)
+                } else if record.success && !fileExists {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundColor(.orange)
+                        .font(.caption)
+                }
+            }
+        }
+        .disabled(!fileExists || !record.success)
+    }
+}
+
+// MARK: - Share Sheet
 
 struct ShareSheet: UIViewControllerRepresentable {
     let activityItems: [Any]
