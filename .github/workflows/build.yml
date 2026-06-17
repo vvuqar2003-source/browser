@@ -20,10 +20,8 @@ jobs:
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
 
-      - name: Create scheme
-        run: |
-          xcodebuild -project BrowserApp.xcodeproj -createScheme BrowserApp
-          xcodebuild -project BrowserApp.xcodeproj -list
+      - name: List project info
+        run: xcodebuild -project BrowserApp.xcodeproj -list
 
       - name: Build archive
         run: |
