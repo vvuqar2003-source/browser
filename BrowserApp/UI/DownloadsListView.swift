@@ -81,7 +81,7 @@ struct ActiveDownloadRow: View {
     let task: DownloadManager.DownloadTask
     let downloadManager: DownloadManager
 
-    var progress: DownloadManager.DownloadProgress? {
+    var progress: DownloadManager.DownloadProgressInfo? {
         downloadManager.downloadProgress[task.id]
     }
 
