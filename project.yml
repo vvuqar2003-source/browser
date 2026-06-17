@@ -1,0 +1,93 @@
+name: BrowserApp
+
+options:
+  bundleIdPrefix: com.browserapp
+  deploymentTarget:
+    iOS: "15.0"
+  generateEmptyDirectories: true
+  defaultConfig: Release
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+    SDKROOT: iphoneos
+    SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+    SUPPORTS_MACCATALYST: NO
+    TARGETED_DEVICE_FAMILY: "1,2"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    GCC_NO_COMMON_BLOCKS: YES
+    CLANG_ENABLE_MODULES: YES
+    CLANG_ENABLE_OBJC_ARC: YES
+    CLANG_ENABLE_OBJC_WEAK: YES
+    GCC_C_LANGUAGE_STANDARD: gnu17
+    CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
+    MTL_FAST_MATH: YES
+    # Signing — SideStore için
+    CODE_SIGN_IDENTITY: ""
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGNING_ALLOWED: "NO"
+    AD_HOC_CODE_SIGNING_ALLOWED: "YES"
+    DEVELOPMENT_TEAM: ""
+    PROVISIONING_PROFILE_SPECIFIER: ""
+
+targets:
+  BrowserApp:
+    type: application
+    platform: iOS
+
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.browserapp.ios
+        PRODUCT_NAME: $(TARGET_NAME)
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        SWIFT_EMIT_LOC_STRINGS: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        LD_RUNPATH_SEARCH_PATHS:
+          - "$(inherited)"
+          - "@executable_path/Frameworks"
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGN_STYLE: Manual
+        PROVISIONING_PROFILE_SPECIFIER: ""
+
+    # Kaynak dosyalar — inject.js Resources olarak işaretlendi
+    sources:
+      - path: BrowserApp/App
+        type: group
+      - path: BrowserApp/Browser
+        type: group
+      - path: BrowserApp/VideoDetector
+        type: group
+        buildPhase:
+          - path: BrowserApp/VideoDetector/inject.js
+            buildPhase: resources
+      - path: BrowserApp/Downloader
+        type: group
+      - path: BrowserApp/AdBlock
+        type: group
+      - path: BrowserApp/Settings
+        type: group
+      - path: BrowserApp/UI
+        type: group
+
+    resources:
+      - path: BrowserApp/Assets.xcassets
+      - path: BrowserApp/VideoDetector/inject.js
+
+    info:
+      path: BrowserApp/Info.plist
+      properties:
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSPhotoLibraryAddUsageDescription: "Video indirmek için fotoğraf kütüphanesine erişim gerekiyor."
+        NSPhotoLibraryUsageDescription: "İndirilen videoları kaydetmek için."
+        UILaunchScreen: {}

@@ -20,11 +20,18 @@ jobs:
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
 
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate .xcodeproj
+        run: xcodegen generate --spec project.yml
+
       - name: Build archive
         run: |
           xcodebuild clean archive \
             -project BrowserApp.xcodeproj \
             -scheme BrowserApp \
+            -configuration Release \
             -archivePath $PWD/build/BrowserApp.xcarchive \
             -destination "generic/platform=iOS" \
             CODE_SIGN_IDENTITY="" \
@@ -38,7 +45,7 @@ jobs:
       - name: Create IPA from archive
         run: |
           mkdir -p build/output
-          APP_PATH=$(find build/BrowserApp.xcarchive -name "BrowserApp.app" -type d)
+          APP_PATH=$(find build/BrowserApp.xcarchive -name "BrowserApp.app" -type d | head -1)
           mkdir -p build/output/Payload
           cp -R "$APP_PATH" build/output/Payload/
           cd build/output
