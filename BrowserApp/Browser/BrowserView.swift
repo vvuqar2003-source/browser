@@ -7,7 +7,6 @@ struct BrowserView: View {
     @StateObject private var viewModel = BrowserViewModel()
     @EnvironmentObject var adBlocker: AdBlocker
     @EnvironmentObject var downloadManager: DownloadManager
-    @State private var showSettings = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -87,13 +86,13 @@ struct BrowserView: View {
                             .foregroundColor(.secondary)
                     }
                     .swipeActions(edge: .trailing) {
-                        Button("İndir") {
+                        Button("Indir") {
                             downloadManager.download(url: subtitle.url, fileName: subtitle.fileName)
                         }
                         .tint(.blue)
                     }
                 }
-                .navigationTitle("Altyazılar")
+                .navigationTitle("Altyazilar")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .navigationBarTrailing) {
@@ -123,20 +122,22 @@ struct WebViewContainer: UIViewRepresentable {
         let contentController = config.userContentController
         contentController.add(viewModel, name: "videoFound")
 
-        let jsURL = Bundle.main.url(forResource: "inject", withExtension: "js")!
-        let jsSource = try! String(contentsOf: jsURL, encoding: .utf8)
-        let userScript = WKUserScript(source: jsSource, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
-        contentController.addUserScript(userScript)
+        if let jsURL = Bundle.main.url(forResource: "inject", withExtension: "js"),
+           let jsSource = try? String(contentsOf: jsURL, encoding: .utf8) {
+            let userScript = WKUserScript(source: jsSource, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
+            contentController.addUserScript(userScript)
+        }
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = viewModel
         webView.uiDelegate = viewModel
         webView.allowsBackForwardNavigationGestures = true
         webView.scrollView.keyboardDismissMode = .interactive
+
+        context.coordinator.webView = webView
         webView.addObserver(context.coordinator, forKeyPath: "estimatedProgress", options: .new, context: nil)
 
         viewModel.setWebView(webView)
-
         adBlocker.applyRules(to: webView)
 
         if let url = URL(string: viewModel.homepageURL) {
@@ -148,8 +149,13 @@ struct WebViewContainer: UIViewRepresentable {
 
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        uiView.removeObserver(coordinator, forKeyPath: "estimatedProgress")
+    }
+
     class Coordinator: NSObject {
         let viewModel: BrowserViewModel
+        weak var webView: WKWebView?
 
         init(viewModel: BrowserViewModel) {
             self.viewModel = viewModel

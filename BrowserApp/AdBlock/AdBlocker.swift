@@ -77,11 +77,11 @@ class AdBlocker: ObservableObject {
             guard let url = URL(string: urlString) else { continue }
             group.enter()
 
-            URLSession.shared.dataTask(with: url) { data, response, error in
+            URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
                 defer { group.leave() }
                 guard let data = data, let content = String(data: data, encoding: .utf8) else { return }
 
-                let rules = self.parseFilterList(content)
+                let rules = self?.parseFilterList(content) ?? []
                 lock.lock()
                 allRules.append(contentsOf: rules)
                 lock.unlock()
@@ -123,10 +123,12 @@ class AdBlocker: ObservableObject {
             .replacingOccurrences(of: "*", with: ".*")
             .replacingOccurrences(of: "|", with: "")
 
+        let escapedDomain = NSRegularExpression.escapedPattern(for: cleanDomain)
+
         let rule = """
         {
             "trigger": {
-                "url-filter": ".*\(NSRegularExpression.escapedPattern(for: cleanDomain)).*",
+                "url-filter": ".*\(escapedDomain).*",
                 "resource-type": ["document", "image", "script", "style-sheet", "media", "raw", "font"]
             },
             "action": {
@@ -166,12 +168,6 @@ class AdBlocker: ObservableObject {
         for rule in contentRules {
             webView.configuration.userContentController.add(rule)
         }
-
-        webView.configuration.userContentController.addScriptMessageHandler(
-            AdBlockMessageHandler(blocker: self),
-            contentWorld: .page,
-            name: "adBlocked"
-        )
     }
 
     private func removeRules() {
@@ -187,20 +183,5 @@ class AdBlocker: ObservableObject {
         DispatchQueue.main.async {
             self.blockedCount += 1
         }
-    }
-}
-
-class AdBlockMessageHandler: NSObject, WKScriptMessageHandler {
-    let blocker: AdBlocker
-
-    init(blocker: AdBlocker) {
-        self.blocker = blocker
-    }
-
-    func userContentController(
-        _ userContentController: WKUserContentController,
-        didReceive message: WKScriptMessage
-    ) {
-        blocker.incrementBlockedCount()
     }
 }

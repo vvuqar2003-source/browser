@@ -12,8 +12,7 @@ class DownloadManager: NSObject, ObservableObject {
     private var foregroundSession: URLSession!
     private var backgroundSession: URLSession!
     private var backgroundCompletionHandler: (() -> Void)?
-    private let maxConcurrent = 3
-    private var pendingQueue: [DownloadTask] = []
+
     private var isBackgroundDownload: Bool {
         UserDefaults.standard.bool(forKey: "backgroundDownload")
     }
@@ -58,7 +57,7 @@ class DownloadManager: NSObject, ObservableObject {
 
         if isHLS {
             let hlsDownloader = HLSDownloader()
-            let task = DownloadTask(url: url, fileName: fileName, isHLS: true)
+            let task = DownloadTask(url: url, fileName: fileName, task: nil, isHLS: true)
             activeDownloads.append(task)
 
             hlsDownloader.download(m3u8URL: url) { [weak self] result in
@@ -76,13 +75,11 @@ class DownloadManager: NSObject, ObservableObject {
             return
         }
 
-        let task = DownloadTask(url: url, fileName: fileName, isHLS: false)
-        var mutableTask = task
-
         let session = isBackgroundDownload ? backgroundSession : foregroundSession
         let downloadTask = session?.downloadTask(with: url)
-        mutableTask.task = downloadTask
-        activeDownloads.append(mutableTask)
+
+        let task = DownloadTask(url: url, fileName: fileName, task: downloadTask, isHLS: false)
+        activeDownloads.append(task)
         downloadTask?.resume()
     }
 
@@ -107,8 +104,6 @@ class DownloadManager: NSObject, ObservableObject {
                 try FileManager.default.removeItem(at: destinationURL)
             }
             try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
-
-            UISaveVideoAtPathToSavedPhotosAlbum(destinationURL.path, nil, nil, nil)
         } catch {
             print("File save error: \(error)")
         }
@@ -126,7 +121,7 @@ class DownloadManager: NSObject, ObservableObject {
         saveHistory()
 
         if isBackgroundDownload {
-            sendNotification(title: "İndirme Tamamlandı", body: "\(fileName) indirildi.")
+            sendNotification(title: "Indirme Tamamlandi", body: "\(fileName) indirildi.")
         }
     }
 

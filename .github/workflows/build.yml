@@ -20,25 +20,25 @@ jobs:
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
 
-      - name: List schemes
-        run: xcodebuild -project BrowserApp.xcodeproj -list
+      - name: Create scheme
+        run: |
+          xcodebuild -project BrowserApp.xcodeproj -createScheme BrowserApp
+          xcodebuild -project BrowserApp.xcodeproj -list
 
       - name: Build archive
         run: |
-          xcodebuild archive \
+          xcodebuild clean archive \
             -project BrowserApp.xcodeproj \
             -scheme BrowserApp \
             -archivePath $PWD/build/BrowserApp.xcarchive \
             -destination "generic/platform=iOS" \
-            -allowProvisioningUpdates \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             AD_HOC_CODE_SIGNING_ALLOWED=YES \
             ENABLE_BITCODE=NO \
             DEVELOPMENT_TEAM="" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
-            ENABLE_PREVIEWS=NO
+            PROVISIONING_PROFILE_SPECIFIER=""
 
       - name: Create ExportOptions.plist
         run: |
@@ -53,12 +53,6 @@ jobs:
               <false/>
               <key>stripSwiftSymbols</key>
               <true/>
-              <key>signingStyle</key>
-              <string>manual</string>
-              <key>signingCertificate</key>
-              <string></string>
-              <key>provisioningProfiles</key>
-              <dict/>
           </dict>
           </plist>
           EOF
