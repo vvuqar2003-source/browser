@@ -96,9 +96,10 @@ class BrowserViewModel: NSObject, ObservableObject {
     }
 
     func scanAndShowDownloadSheet() {
-        webView?.evaluateJavaScript("manualScan()")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-            self?.showDownloadSheet = true
+        webView?.evaluateJavaScript("manualScan()") { [weak self] _, _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                self?.showDownloadSheet = true
+            }
         }
     }
 

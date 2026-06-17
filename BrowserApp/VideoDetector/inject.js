@@ -1,14 +1,15 @@
 (function() {
     'use strict';
 
-    const VIDEO_EXTENSIONS = ['mp4', 'm3u8', 'mkv', 'webm', 'ts', 'mov'];
-    const SUBTITLE_EXTENSIONS = ['vtt', 'srt'];
+    const VIDEO_EXTENSIONS = ['mp4', 'm3u8', 'mkv', 'webm', 'ts', 'mov', 'avi', 'flv', 'wmv', '3gp'];
+    const SUBTITLE_EXTENSIONS = ['vtt', 'srt', 'ass', 'ssa', 'sub'];
     const sentURLs = new Set();
 
     function isVideoURL(url) {
         try {
             const pathname = new URL(url).pathname.toLowerCase();
             const ext = pathname.split('.').pop();
+            if (ext.includes('?')) return VIDEO_EXTENSIONS.includes(ext.split('?')[0]);
             return VIDEO_EXTENSIONS.includes(ext);
         } catch {
             return false;
@@ -19,6 +20,7 @@
         try {
             const pathname = new URL(url).pathname.toLowerCase();
             const ext = pathname.split('.').pop();
+            if (ext.includes('?')) return SUBTITLE_EXTENSIONS.includes(ext.split('?')[0]);
             return SUBTITLE_EXTENSIONS.includes(ext);
         } catch {
             return false;
@@ -39,6 +41,7 @@
     }
 
     function checkURL(url, type) {
+        if (!url || typeof url !== 'string') return;
         try {
             const fullURL = new URL(url, document.baseURI).href;
             if (type === 'video' && isVideoURL(fullURL)) {
@@ -49,63 +52,89 @@
         } catch {}
     }
 
-    const originalFetch = window.fetch;
-    window.fetch = function(...args) {
-        const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
-        if (url) {
-            checkURL(url, 'video');
-            checkURL(url, 'subtitle');
-        }
-        return originalFetch.apply(this, args);
-    };
-
-    const originalXHROpen = XMLHttpRequest.prototype.open;
-    XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-        if (url) {
-            checkURL(url, 'video');
-            checkURL(url, 'subtitle');
-        }
-        return originalXHROpen.apply(this, [method, url, ...rest]);
-    };
+    function checkAllTypes(url) {
+        checkURL(url, 'video');
+        checkURL(url, 'subtitle');
+    }
 
     function scanElement(el) {
-        if (el.tagName === 'VIDEO' || el.tagName === 'AUDIO') {
-            const src = el.src || el.querySelector('source')?.src;
-            if (src) checkURL(src, 'video');
+        if (!el || !el.tagName) return;
 
+        for (const attr of el.attributes || []) {
+            if (attr.value && typeof attr.value === 'string' && attr.value.length > 5) {
+                checkAllTypes(attr.value);
+            }
+        }
+
+        if (el.tagName === 'VIDEO' || el.tagName === 'AUDIO') {
+            if (el.src) checkAllTypes(el.src);
+            if (el.currentSrc) checkAllTypes(el.currentSrc);
+            if (el.poster) checkAllTypes(el.poster);
             el.querySelectorAll('source').forEach(s => {
-                if (s.src) checkURL(s.src, 'video');
+                if (s.src) checkAllTypes(s.src);
+                if (s.getAttribute('data-src')) checkAllTypes(s.getAttribute('data-src'));
             });
         }
 
-        if (el.tagName === 'TRACK') {
-            const src = el.src;
-            if (src) checkURL(src, 'subtitle');
+        if (el.tagName === 'TRACK' && el.src) {
+            checkAllTypes(el.src);
         }
 
         if (el.tagName === 'A' && el.href) {
-            checkURL(el.href, 'video');
+            if (el.href !== document.location.href) checkAllTypes(el.href);
+        }
+
+        if (el.tagName === 'IFRAME') {
+            if (el.src) checkAllTypes(el.src);
+            try {
+                const doc = el.contentDocument || el.contentWindow?.document;
+                if (doc) {
+                    doc.querySelectorAll('video, audio, source, track, a[href], [src]').forEach(scanElement);
+                }
+            } catch(e) {}
+        }
+
+        if (el.tagName === 'IMG' && el.src) {
+            checkAllTypes(el.src);
         }
 
         const style = window.getComputedStyle(el);
         const bg = style.backgroundImage;
         if (bg && bg !== 'none') {
-            const match = bg.match(/url\(["']?(.*?)["']?\)/);
-            if (match) checkURL(match[1], 'video');
-        }
-
-        if (el.tagName === 'IFRAME') {
-            try {
-                const doc = el.contentDocument || el.contentWindow?.document;
-                if (doc) {
-                    doc.querySelectorAll('video, audio, source, track, a[href]').forEach(scanElement);
-                }
-            } catch(e) {}
+            const matches = bg.matchAll(/url\(["']?(.*?)["']?\)/g);
+            for (const match of matches) {
+                checkAllTypes(match[1]);
+            }
         }
     }
 
+    const originalFetch = window.fetch;
+    window.fetch = function(...args) {
+        const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
+        if (url) checkAllTypes(url);
+        return originalFetch.apply(this, args);
+    };
+
+    const originalXHROpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+        if (url) checkAllTypes(url);
+        return originalXHROpen.apply(this, [method, url, ...rest]);
+    };
+
+    try {
+        const srcDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');
+        if (srcDescriptor && srcDescriptor.set) {
+            Object.defineProperty(HTMLMediaElement.prototype, 'src', {
+                get() { return srcDescriptor.get.call(this); },
+                set(value) {
+                    if (value) checkAllTypes(value);
+                    srcDescriptor.set.call(this, value);
+                }
+            });
+        }
+    } catch(e) {}
+
     window.manualScan = function() {
-        document.querySelectorAll('video, audio, source, track, a[href], iframe').forEach(scanElement);
         document.querySelectorAll('*').forEach(scanElement);
     };
 
@@ -117,7 +146,6 @@
                     node.querySelectorAll?.('*')?.forEach(scanElement);
                 }
             }
-
             if (mutation.type === 'attributes') {
                 scanElement(mutation.target);
             }
@@ -128,15 +156,18 @@
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ['src', 'href', 'style']
+        attributeFilter: ['src', 'href', 'style', 'data-src', 'data-url', 'poster']
     });
 
-    document.querySelectorAll('video, audio, source, track, a[href]').forEach(scanElement);
+    document.querySelectorAll('*').forEach(scanElement);
 
     setInterval(() => {
         document.querySelectorAll('video, audio').forEach(el => {
-            const src = el.src || el.querySelector('source')?.src;
-            if (src) checkURL(src, 'video');
+            if (el.src) checkAllTypes(el.src);
+            if (el.currentSrc) checkAllTypes(el.currentSrc);
+            el.querySelectorAll('source').forEach(s => {
+                if (s.src) checkAllTypes(s.src);
+            });
         });
     }, 3000);
 })();
