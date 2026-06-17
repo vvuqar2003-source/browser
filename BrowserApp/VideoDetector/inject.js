@@ -30,7 +30,9 @@
             const msg = {
                 url: url,
                 pageTitle: document.title || '',
-                type: type
+                type: type,
+                pageURL: document.location.href,
+                origin: document.location.origin
             };
             if (streamType) msg.streamType = streamType;
             window.webkit.messageHandlers.videoFound.postMessage(msg);

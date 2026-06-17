@@ -11,6 +11,8 @@ struct DetectedVideo: Identifiable, Equatable {
     var format: String
     var estimatedSize: String?
     var streamType: String // "hls", "direct"
+    var sourcePageURL: String? // iframe/embed URL where video was found
+    var sourceOrigin: String?
 
     static func == (lhs: DetectedVideo, rhs: DetectedVideo) -> Bool {
         lhs.url == rhs.url
@@ -23,6 +25,8 @@ struct DetectedSubtitle: Identifiable, Equatable {
     let pageTitle: String
     var fileName: String
     var format: String
+    var sourcePageURL: String?
+    var sourceOrigin: String?
 
     static func == (lhs: DetectedSubtitle, rhs: DetectedSubtitle) -> Bool {
         lhs.url == rhs.url
@@ -111,14 +115,21 @@ class BrowserViewModel: NSObject, ObservableObject {
 
         if isHLS {
             // HLS needs segment-by-segment download, use headers approach
-            getDownloadHeaders(for: video.url) { headers in
+            getDownloadHeaders(for: video.url, refererOverride: video.sourcePageURL) { headers in
                 downloadManager.downloadHLS(url: video.url, fileName: video.fileName, headers: headers)
             }
             return
         }
 
-        // Use WKWebView.startDownload — this uses the browser's full session (cookies, auth, everything)
-        let request = URLRequest(url: video.url)
+        // Build request with correct Referer (iframe/embed URL, not main page)
+        var request = URLRequest(url: video.url)
+        if let referer = video.sourcePageURL {
+            request.setValue(referer, forHTTPHeaderField: "Referer")
+        }
+        if let origin = video.sourceOrigin {
+            request.setValue(origin, forHTTPHeaderField: "Origin")
+        }
+
         webView.startDownload(using: request) { download in
             DispatchQueue.main.async {
                 downloadManager.handleWKDownload(download, fileName: video.fileName, url: video.url)
@@ -129,7 +140,14 @@ class BrowserViewModel: NSObject, ObservableObject {
     func downloadSubtitle(_ subtitle: DetectedSubtitle, with downloadManager: DownloadManager) {
         guard let webView = webView else { return }
 
-        let request = URLRequest(url: subtitle.url)
+        var request = URLRequest(url: subtitle.url)
+        if let referer = subtitle.sourcePageURL {
+            request.setValue(referer, forHTTPHeaderField: "Referer")
+        }
+        if let origin = subtitle.sourceOrigin {
+            request.setValue(origin, forHTTPHeaderField: "Origin")
+        }
+
         webView.startDownload(using: request) { download in
             DispatchQueue.main.async {
                 downloadManager.handleWKDownload(download, fileName: subtitle.fileName, url: subtitle.url)
@@ -137,7 +155,7 @@ class BrowserViewModel: NSObject, ObservableObject {
         }
     }
 
-    private func getDownloadHeaders(for url: URL, completion: @escaping ([String: String]?) -> Void) {
+    private func getDownloadHeaders(for url: URL, refererOverride: String? = nil, completion: @escaping ([String: String]?) -> Void) {
         guard let webView = webView else {
             completion(nil)
             return
@@ -158,8 +176,8 @@ class BrowserViewModel: NSObject, ObservableObject {
                 headers["Cookie"] = relevantCookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
             }
 
-            if let pageURL = pageURL {
-                headers["Referer"] = pageURL
+            if let referer = refererOverride ?? pageURL {
+                headers["Referer"] = referer
             }
 
             webView.evaluateJavaScript("navigator.userAgent") { result, _ in
@@ -173,7 +191,7 @@ class BrowserViewModel: NSObject, ObservableObject {
         }
     }
 
-    func addVideo(url: URL, pageTitle: String, streamType: String? = nil) {
+    func addVideo(url: URL, pageTitle: String, streamType: String? = nil, sourcePageURL: String? = nil, sourceOrigin: String? = nil) {
         let urlString = url.absoluteString
         guard !seenVideoURLs.contains(urlString) else { return }
         seenVideoURLs.insert(urlString)
@@ -209,7 +227,9 @@ class BrowserViewModel: NSObject, ObservableObject {
             fileName: fileName,
             format: format,
             estimatedSize: nil,
-            streamType: isHLS ? "hls" : "direct"
+            streamType: isHLS ? "hls" : "direct",
+            sourcePageURL: sourcePageURL,
+            sourceOrigin: sourceOrigin
         )
 
         DispatchQueue.main.async {
@@ -218,7 +238,7 @@ class BrowserViewModel: NSObject, ObservableObject {
         }
     }
 
-    func addSubtitle(url: URL, pageTitle: String) {
+    func addSubtitle(url: URL, pageTitle: String, sourcePageURL: String? = nil, sourceOrigin: String? = nil) {
         let urlString = url.absoluteString
         guard !seenSubtitleURLs.contains(urlString) else { return }
         seenSubtitleURLs.insert(urlString)
@@ -231,7 +251,9 @@ class BrowserViewModel: NSObject, ObservableObject {
             url: url,
             pageTitle: pageTitle,
             fileName: fileName,
-            format: format
+            format: format,
+            sourcePageURL: sourcePageURL,
+            sourceOrigin: sourceOrigin
         )
 
         DispatchQueue.main.async {
@@ -306,12 +328,14 @@ extension BrowserViewModel: WKScriptMessageHandler {
 
         let pageTitle = body["pageTitle"] ?? self.pageTitle
         let type = body["type"] ?? "video"
-        let streamType = body["streamType"] // "hls", "direct", etc.
+        let streamType = body["streamType"]
+        let pageURL = body["pageURL"]
+        let origin = body["origin"]
 
         if type == "subtitle" {
-            addSubtitle(url: url, pageTitle: pageTitle)
+            addSubtitle(url: url, pageTitle: pageTitle, sourcePageURL: pageURL, sourceOrigin: origin)
         } else {
-            addVideo(url: url, pageTitle: pageTitle, streamType: streamType)
+            addVideo(url: url, pageTitle: pageTitle, streamType: streamType, sourcePageURL: pageURL, sourceOrigin: origin)
         }
     }
 }
